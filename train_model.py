@@ -1,5 +1,9 @@
 #!/nfs/polizzi/bfry/programs/miniconda3/envs/ligandmpnn_env/bin/python
 
+import random
+import numpy as np
+from typing import *
+
 import torch
 from model_utils import ProteinMPNN
 from torch.utils.data import DataLoader
@@ -28,9 +32,29 @@ model_hyperparams = {
     'num_decoder_layers': 3, 
     'k_neighbors': 32, 
     'vocab': 21, 
-    'atom_context_num': 24, 
     'ligand_mpnn_use_side_chain_context': True,
+    'cutoff_for_score': 8.0,
+    'use_atom_context': True,
+    'atom_context_num': 24, 
 }
+
+def set_random_seeds(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+def get_dataloaders(database: UnclusteredProteinChainDataset, seed: int) -> Tuple[DataLoader, DataLoader]:
+    collate_fn = lambda x: collate_cluster_samples(x, database_params['use_xtal_additive_ligands'], model_hyperparams['cutoff_for_score'], model_hyperparams['use_atom_context'], model_hyperparams['atom_context_num'])
+
+    train_sampler = LigandMPNNDatasetSampler(database, database_params, is_train=True, seed=0, max_protein_length=database_params['max_protein_length'])
+    train_dataloader = DataLoader(database, collate_fn=collate_fn, batch_sampler=train_sampler)
+
+    test_sampler = LigandMPNNDatasetSampler(database, database_params, is_train=False, seed=0, max_protein_length=database_params['max_protein_length'])
+    test_dataloader = DataLoader(database, collate_fn=collate_fn, batch_sampler=test_sampler)
+
+    return train_dataloader, test_dataloader
+
 
 
 def send_tensors_to_device(batch_dict: dict, device: torch.device) -> dict:
@@ -63,19 +87,17 @@ def train_model(model: ProteinMPNN, batch_dict: dict):
     batch_dict['randn'] = torch.randn(batch_dict['mask_XY'].shape, device=model.device)
 
     logits = model(batch_dict)
+
     raise NotImplementedError
 
 
-def main(device):
-    device = torch.device(device)
+def main(device_str: str, seed=0):
+    set_random_seeds(seed)
+    device = torch.device(device_str)
 
     model = ProteinMPNN(**model_hyperparams).to(device)
-
-    training_database = UnclusteredProteinChainDataset(database_params)
-    train_sampler = LigandMPNNDatasetSampler(training_database, database_params, is_train=True, seed=0, max_protein_length=database_params['max_protein_length'])
-
-    collate_fn = lambda x: collate_cluster_samples(x, database_params['use_xtal_additive_ligands'])
-    train_dataloader = DataLoader(training_database, collate_fn=collate_fn, batch_sampler=train_sampler)
+    database = UnclusteredProteinChainDataset(database_params)
+    train_dataloader, test_dataloader = get_dataloaders(database, seed=seed)
 
     for batch in train_dataloader:
         train_model(model, batch)

@@ -454,7 +454,7 @@ class LigandMPNNDatasetSampler(Sampler):
         self.construct_batches()
 
 
-def collate_cluster_samples(data: list, use_xtal_additive_ligands: bool, cutoff_for_score=8.0, use_atom_context=True, number_of_ligand_atoms=24):
+def collate_cluster_samples(data: list, use_xtal_additive_ligands: bool, cutoff_for_score: float, use_atom_context: bool, atom_context_num: int):
     """
     Given a list of data from protein dataset, creates a BatchData object holding a single batch for input to model.
     Handles converting protein complex data into torch tensors with desired shapes and properties.
@@ -639,13 +639,13 @@ def collate_cluster_samples(data: list, use_xtal_additive_ligands: bool, cutoff_
             padded_tensors = torch.stack(padded_tensors)
             output_dict[k] = padded_tensors
 
-    out = featurize(output_dict, cutoff_for_score=cutoff_for_score, use_atom_context=use_atom_context, number_of_ligand_atoms=number_of_ligand_atoms)
+    out = featurize(output_dict, cutoff_for_score=cutoff_for_score, use_atom_context=use_atom_context, atom_context_num=atom_context_num)
     out['batch_size'] = out['X'].shape[0]
 
     return out
 
 
-def featurize(input_dict, cutoff_for_score, use_atom_context, number_of_ligand_atoms):
+def featurize(input_dict, cutoff_for_score, use_atom_context, atom_context_num):
     output_dict = {}
     mask = input_dict["mask"]
     Y = input_dict["Y"]
@@ -659,7 +659,7 @@ def featurize(input_dict, cutoff_for_score, use_atom_context, number_of_ligand_a
     a = torch.cross(b, c, axis=-1)
     CB = -0.58273431 * a + 0.56802827 * b - 0.54067466 * c + CA
     Y, Y_t, Y_m, D_XY = batch_get_nearest_neighbours(
-        CB, mask, Y, Y_t, Y_m, number_of_ligand_atoms
+        CB, mask, Y, Y_t, Y_m, atom_context_num
     )
     mask_XY = (D_XY < cutoff_for_score) * mask * Y_m[:, :, 0]
     output_dict["mask_XY"] = mask_XY
