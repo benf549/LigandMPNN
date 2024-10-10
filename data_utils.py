@@ -835,8 +835,7 @@ def parse_PDB(
         Y_t = list(other_atoms.getElements())
         Y_t = np.array(
             [
-                element_dict[y_t.upper()] if y_t.upper() in element_list else 0
-                for y_t in Y_t
+                element_dict[y_t.upper()] if y_t.upper() in element_list else 0 for y_t in Y_t
             ],
             dtype=np.int32,
         )
@@ -885,6 +884,42 @@ def parse_PDB(
     output_dict["xyz_37_m"] = torch.tensor(xyz_37_m, device=device, dtype=torch.int32)
 
     return output_dict, backbone, other_atoms, CA_icodes, water_atoms
+
+
+def batch_get_nearest_neighbours(CB, mask, Y, Y_t, Y_m, number_of_ligand_atoms):
+    device = CB.device
+    mask_CBY = torch.einsum('bi,bj->bij', mask, Y_m) # torch.size([B, L, Y])
+    L2_AB = torch.sum((CB[:, :, None, :] - Y[:, None]) ** 2, -1) # torch.Size([B, L, Y])
+    L2_AB = L2_AB * mask_CBY + (1 - mask_CBY) * 1000.0
+
+    nn_idx = torch.argsort(L2_AB, -1)[:, :, :number_of_ligand_atoms] # torch.size([B, L, knn])
+    L2_AB_nn = torch.gather(L2_AB, 2, nn_idx) # torch.size([B, L, knn])
+    D_AB_closest = torch.sqrt(L2_AB_nn[:, :, 0]) # torch.size([B, L])
+
+    Y_r = Y[:, None, :, :].repeat(1, CB.shape[1], 1, 1) # torch.size([B, L, Y, 3])
+    Y_t_r = Y_t[:, None, :].repeat(1, CB.shape[1], 1) # torch.size([B, L, Y])
+    Y_m_r = Y_m[:, None, :].repeat(1, CB.shape[1], 1) # torch.size([B, L, Y])
+
+    Y_tmp = torch.gather(Y_r, 2, nn_idx[:, :, :, None].repeat(1, 1, 1, 3)) # torch.size([B, L, knn, 3])
+    Y_t_tmp = torch.gather(Y_t_r, 2, nn_idx) # torch.size([B, L, knn])
+    Y_m_tmp = torch.gather(Y_m_r, 2, nn_idx) # torch.size([B, L, knn])
+
+    Y = torch.zeros(
+        [CB.shape[0], CB.shape[1], number_of_ligand_atoms, 3], dtype=torch.float32, device=device
+    )
+    Y_t = torch.zeros(
+        [CB.shape[0], CB.shape[1], number_of_ligand_atoms], dtype=torch.int32, device=device
+    )
+    Y_m = torch.zeros(
+        [CB.shape[0], CB.shape[1], number_of_ligand_atoms], dtype=torch.int32, device=device
+    )
+
+    num_nn_update = Y_tmp.shape[2]
+    Y[:, :, :num_nn_update] = Y_tmp
+    Y_t[:, :, :num_nn_update] = Y_t_tmp
+    Y_m[:, :, :num_nn_update] = Y_m_tmp
+
+    return Y, Y_t, Y_m, D_AB_closest
 
 
 def get_nearest_neighbours(CB, mask, Y, Y_t, Y_m, number_of_ligand_atoms):

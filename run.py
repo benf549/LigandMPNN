@@ -421,6 +421,13 @@ def main(args) -> None:
                     [feature_dict["batch_size"], feature_dict["mask"].shape[1]],
                     device=device,
                 )
+
+                for k,v in feature_dict.items():
+                    if isinstance(v, torch.Tensor):
+                        print(k, v.shape)#, v[0][0])
+
+                print(feature_dict['Y'][0])
+                raise NotImplementedError
                 output_dict = model.sample(feature_dict)
 
                 # compute confidence scores
