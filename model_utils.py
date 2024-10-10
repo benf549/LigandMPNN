@@ -9,19 +9,9 @@ import torch
 
 class ProteinMPNN(torch.nn.Module):
     def __init__(
-        self,
-        num_letters=21,
-        node_features=128,
-        edge_features=128,
-        hidden_dim=128,
-        num_encoder_layers=3,
-        num_decoder_layers=3,
-        vocab=21,
-        k_neighbors=48,
-        augment_eps=0.0,
-        dropout=0.0,
-        atom_context_num=0,
-        ligand_mpnn_use_side_chain_context=False,
+        self, num_letters=21, node_features=128, edge_features=128, hidden_dim=128,
+        num_encoder_layers=3, num_decoder_layers=3, vocab=21, k_neighbors=48,
+        augment_eps=0.0, dropout=0.0, atom_context_num=0, ligand_mpnn_use_side_chain_context=False, **kwargs
     ):
         super(ProteinMPNN, self).__init__()
 
