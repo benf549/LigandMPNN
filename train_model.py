@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 
 from training.database import UnclusteredProteinChainDataset, LigandMPNNDatasetSampler, collate_cluster_samples
 
+
 database_params = {
     'debug': True,
     'raw_dataset_path': '/nfs/polizzi/bfry/laser_training_database/all_data_shelf_hbond_sconly_rigorous.db',
@@ -18,6 +19,20 @@ database_params = {
     'use_xtal_additive_ligands': True,
 }
 
+
+model_hyperparams = {
+    'node_features': 128, 
+    'edge_features': 128, 
+    'hidden_dim': 128, 
+    'num_encoder_layers': 3, 
+    'num_decoder_layers': 3, 
+    'k_neighbors': 32, 
+    'vocab': 21, 
+    'atom_context_num': 24, 
+    'ligand_mpnn_use_side_chain_context': True,
+}
+
+
 def send_tensors_to_device(batch_dict: dict, device: torch.device) -> dict:
     output = {}
     for i,j in batch_dict.items():
@@ -27,22 +42,34 @@ def send_tensors_to_device(batch_dict: dict, device: torch.device) -> dict:
             output[i] = j
     return output
 
-def main():
-    device = torch.device('cpu')
-    model = ProteinMPNN(
-        node_features=128,
-        edge_features=128,
-        hidden_dim=128,
-        num_encoder_layers=3,
-        num_decoder_layers=3,
-        k_neighbors=48,
-        vocab=21,
-        device=device,
-        atom_context_num=24,
-        model_type='ligand_mpnn',
-        ligand_mpnn_use_side_chain_context=True,
-    ).to(device)
+
+@torch.no_grad()
+def sample_model(model: ProteinMPNN, batch_dict: dict):
+    model.eval()
+
+    batch_dict['randn'] = torch.randn(batch_dict['mask_XY'].shape, device=model.device)
+    batch_dict['temperature'] = 1.0
+
+    batch_dict = send_tensors_to_device(batch_dict, model.device)
+    sample_output = model.sample(batch_dict)
+
+    return sample_output
+
+
+def train_model(model: ProteinMPNN, batch_dict: dict):
     model.train()
+
+    batch_dict = send_tensors_to_device(batch_dict, model.device)
+    batch_dict['randn'] = torch.randn(batch_dict['mask_XY'].shape, device=model.device)
+
+    logits = model(batch_dict)
+    raise NotImplementedError
+
+
+def main(device):
+    device = torch.device(device)
+
+    model = ProteinMPNN(**model_hyperparams).to(device)
 
     training_database = UnclusteredProteinChainDataset(database_params)
     train_sampler = LigandMPNNDatasetSampler(training_database, database_params, is_train=True, seed=0, max_protein_length=database_params['max_protein_length'])
@@ -51,18 +78,10 @@ def main():
     train_dataloader = DataLoader(training_database, collate_fn=collate_fn, batch_sampler=train_sampler)
 
     for batch in train_dataloader:
-
-        batch['randn'] = torch.randn(batch['mask_XY'].shape, device=model.device)
-        batch['temperature'] = 1.0
-        batch = send_tensors_to_device(batch, model.device)
-        sample_output = model(batch)
+        train_model(model, batch)
         break
-
-
-    data = [training_database[0], training_database[1]]
 
 
 
 if __name__ == "__main__":
-
-    main()
+    main('cuda:4')
